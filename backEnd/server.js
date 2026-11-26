@@ -431,10 +431,18 @@ async function api(req, res, url) {
       if (!b.active && (id === user.id || (target.role === 'admin' && admins() <= 1))) throw httpErr(400, 'ปิดบัญชีนี้ไม่ได้');
       sets.push('active = ?'); vals.push(b.active ? 1 : 0);
     }
-    if (b.password != null) { const pw = String(b.password || DEFAULT_PW); if (pw.length < 4) throw httpErr(400, 'รหัสผ่านสั้นเกินไป'); sets.push('pass_hash = ?', 'must_change = 1'); vals.push(await hashPw(pw)); }
+    if (b.password != null) {
+      const pw = String(b.password || DEFAULT_PW), min = target.role === 'admin' ? 6 : 4;
+      if (pw.length < min) throw httpErr(400, `รหัสผ่านต้องมีอย่างน้อย ${min} ตัวอักษร`);
+      if (pw.length > 128) throw httpErr(400, 'รหัสผ่านยาวเกินไป');
+      // ค่าเริ่มต้น: บังคับเปลี่ยนเมื่อเข้าครั้งถัดไป · แอดมินเลือกไม่บังคับได้ (ยกเว้นรหัสเริ่มต้น 1234/admin ต้องเปลี่ยนเสมอ)
+      const force = b.must_change !== false || pw === DEFAULT_PW || pw.toLowerCase() === 'admin';
+      sets.push('pass_hash = ?', 'must_change = ?'); vals.push(await hashPw(pw), force ? 1 : 0);
+    }
     if (!sets.length) throw httpErr(400, 'ไม่มีข้อมูลที่จะแก้');
     db.prepare(`UPDATE users SET ${sets.join(', ')} WHERE id = ?`).run(...vals, id);
-    if (b.password != null || b.active === false) db.prepare('DELETE FROM sessions WHERE user_id = ?').run(id);
+    // ออกจากระบบทุกเครื่องของบัญชีนั้น (ยกเว้นเครื่องที่แอดมินใช้อยู่ ถ้าแก้รหัสตัวเอง)
+    if (b.password != null || b.active === false) db.prepare('DELETE FROM sessions WHERE user_id = ? AND token_hash <> ?').run(id, sha(cookies(req).nc_sid || ''));
     audit(req, user, b.password != null ? 'user_password_reset' : 'user_updated', target.username);
     return send(res, 200, { ok: true });
   }
