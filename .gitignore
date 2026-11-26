@@ -1,0 +1,21 @@
+# ฐานข้อมูล (มีแฮชรหัสผ่าน session และข้อมูลนักเรียน) — ห้ามขึ้น GitHub
+backEnd/data/
+*.db
+*.db-wal
+*.db-shm
+*.sqlite
+
+# เครื่องมือ AI / ค่าตั้งเฉพาะเครื่อง
+.claude/
+.agents/
+.codex/
+.impeccable/
+
+# ทั่วไป
+node_modules/
+.env
+.env.*
+*.log
+Thumbs.db
+.DS_Store
+.vscode/
