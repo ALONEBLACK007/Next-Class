@@ -1,7 +1,7 @@
 // ---------- Views ----------
 const roles={admin:[['dash','ภาพรวม'],['data','ข้อมูลและตรวจสอบ'],['gen','จัดตาราง (AI)'],['view','ตารางสอน'],['exp','ส่งออก/เผยแพร่'],['about','แนวคิดและคู่มือ'],['admin','ผู้ดูแลระบบ']],
  teacher:[['view','ตารางสอนของฉัน'],['dash','ภาพรวม'],['about','คู่มือ']],student:[['view','ตารางเรียนของฉัน'],['about','คู่มือ']]};
-function nav(){$('#nav').innerHTML=roles[S.user.role].filter(([k])=>k!='admin'||API.on).map(([k,l])=>`<button class="t ${k=='admin'?'adm ':''}${S.tab==k?'on':''}" data-t="${k}" ${S.tab==k?'aria-current="page"':''}>${k=='admin'?ic('shield'):''}${l}</button>`).join('');$('#nav').onclick=e=>{const t=e.target.closest('[data-t]');if(t){S.tab=t.dataset.t;render()}}}
+function nav(){$('#nav').innerHTML=roles[S.user.role].map(([k,l])=>`<button class="t ${k=='admin'?'adm ':''}${S.tab==k?'on':''}" data-t="${k}" ${S.tab==k?'aria-current="page"':''}>${k=='admin'?ic('shield'):''}${l}</button>`).join('');$('#nav').onclick=e=>{const t=e.target.closest('[data-t]');if(t){S.tab=t.dataset.t;render()}}}
 // คาบพักเที่ยง 12.00–13.00 ล็อกเด็ดขาด: ตัดคาบเรียนที่ตกในคาบพักออกจากตารางเสมอ
 function lockLunch(quiet){if(!S.tt||!S.data)return 0;setSlots(S.data);const n=S.tt.rows.length;S.tt.rows=S.tt.rows.filter(r=>r.slot%P!=LUNCH);const k=n-S.tt.rows.length;
  if(k){S.tt.m=null;sv();if(!quiet)toast(`นำ ${k} คาบออกจากคาบพักเที่ยง 12.00–13.00 แล้ว (ห้ามมีคาบเรียน) — กดจัดตารางใหม่ หรือเพิ่มคาบในช่องอื่น`)}return k}
@@ -285,7 +285,13 @@ const pwFields=(min,self,bulk)=>`<label class="fl">รหัสผ่านใ�
 const bindShow=()=>{const sb=$('#ed [data-show]');if(sb)sb.onclick=()=>{const f=$('#ed').querySelectorAll('input[name^=password]'),h=f[0].type=='password';f.forEach(i=>i.type=h?'text':'password');sb.textContent=h?'ซ่อน':'แสดง'}};
 const pwCheck=fd=>{if(fd.get('password')!==fd.get('password2'))throw new Error('ยืนยันรหัสผ่านไม่ตรงกัน');return{password:fd.get('password'),must_change:fd.get('must_change')==='on'}};
 async function adminV(){const m=$('#mn');
- if(!API.on){m.innerHTML='<div class="card empty"><h2>เมนูผู้ดูแลระบบต้องเปิดผ่านเซิร์ฟเวอร์</h2><p class="mu">รัน <code>node backEnd/server.js</code> แล้วเปิด http://localhost:3000</p></div>';return}
+ if(!API.on){m.innerHTML=`<div class="adm-hd"><div><h2 class="adm-t">${ic('shield')} ผู้ดูแลระบบ</h2><p class="mu">ตอนนี้เปิดแบบไฟล์เดียว (ไม่มีเซิร์ฟเวอร์) ข้อมูลอยู่ในเบราว์เซอร์เครื่องนี้เท่านั้น</p></div></div>
+  <div class="card hl"><h2>${ic('database')} เปิดโหมดเซิร์ฟเวอร์เพื่อใช้เมนูผู้ดูแลระบบเต็มรูปแบบ</h2>
+  <p class="mu">ต้องเปิดผ่านเซิร์ฟเวอร์ก่อน จึงจะใช้จัดการบัญชีครูและนักเรียน แก้รหัสผ่านของทุกคน ดูประวัติตาราง ดูบันทึกการใช้งาน และสำรองฐานข้อมูลได้</p>
+  <ol class="steps"><li>ดับเบิลคลิกไฟล์ <code>backEnd\\start.cmd</code> ในโฟลเดอร์โปรเจกต์ (หรือรัน <code>node backEnd/server.js</code>)</li><li>เบราว์เซอร์จะเปิด <b>http://localhost:3000</b> ให้เอง (ถ้าไม่เปิด ให้พิมพ์ลิงก์นี้เอง)</li><li>เข้าสู่ระบบด้วย <code>admin / admin</code> ระบบจะบังคับตั้งรหัสใหม่ จากนั้นเมนูนี้จะแสดงครบทุกหมวด</li></ol></div>
+  <div class="card"><h2>${ic('key')} ใช้ได้ในโหมดไฟล์เดียว</h2><div class="row"><button class="g" id="lpw">${ic('key')} เปลี่ยนรหัสแอดมิน (เครื่องนี้)</button><button class="g" id="lbk">${ic('save')} สำรองไฟล์โปรเจกต์ (.json)</button></div>
+  <p class="mu hint">${ic('info')} ไฟล์โปรเจกต์ .json นำไปเปิดในโหมดเซิร์ฟเวอร์ได้ ที่เมนู “ข้อมูลและตรวจสอบ” → เลือกไฟล์</p></div>`;
+  $('#lpw').onclick=()=>openPw(false);$('#lbk').onclick=()=>save('nongtime-project.json',JSON.stringify({app:'Next Class',ts:Date.now(),data:S.data,tt:S.tt,blocks:S.blocks,raw:S.raw,W:S.W}));return}
  const sub=S.asub||'users';
  m.innerHTML=`<div class="adm-hd"><div><h2 class="adm-t">${ic('shield')} ผู้ดูแลระบบ</h2><p class="mu">เฉพาะแอดมิน · จัดการบัญชีและรหัสผ่าน ดูประวัติ ตรวจการใช้งาน และสำรองข้อมูล</p></div>
  <div class="seg" role="tablist" aria-label="หมวดผู้ดูแลระบบ">${ASUB.map(([k,i,l])=>`<button role="tab" aria-selected="${k==sub}" class="${k==sub?'on':''}" data-as="${k}">${ic(i)}<span>${l}</span></button>`).join('')}</div></div><div id="admc"><div class="card"><p class="mu">กำลังโหลด…</p></div></div>`;
