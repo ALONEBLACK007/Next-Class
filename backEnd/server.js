@@ -447,6 +447,45 @@ async function api(req, res, url) {
     return send(res, 200, { ok: true });
   }
 
+  // ----- เมนูผู้ดูแลระบบ -----
+  if (p === 'admin/summary' && m === 'GET') {
+    need(user, 'admin');
+    const one = q => db.prepare(q).get().n;
+    const by = Object.fromEntries(['admin', 'teacher', 'student'].map(r => [r, db.prepare('SELECT COUNT(*) AS n FROM users WHERE role = ?').get(r).n]));
+    let size = 0; for (const f of [DB_FILE, DB_FILE + '-wal']) { try { size += fs.statSync(f).size; } catch {} }
+    return send(res, 200, {
+      users: by, must_change: one('SELECT COUNT(*) AS n FROM users WHERE must_change = 1 AND active = 1'), inactive: one('SELECT COUNT(*) AS n FROM users WHERE active = 0'),
+      failed24: one("SELECT COUNT(*) AS n FROM audit_log WHERE action = 'login_failed' AND at > datetime('now','-1 day')"),
+      datasets: one('SELECT COUNT(*) AS n FROM datasets'), timetables: one('SELECT COUNT(*) AS n FROM timetables'), audit: one('SELECT COUNT(*) AS n FROM audit_log'), db_size: size,
+    });
+  }
+  if (p === 'users/bulk' && m === 'POST') {
+    need(user, 'admin');
+    const b = await readBody(req);
+    const ids = [...new Set((Array.isArray(b.ids) ? b.ids : []).map(Number).filter(Number.isInteger))].slice(0, 5000);
+    if (!ids.length) throw httpErr(400, 'ยังไม่ได้เลือกบัญชี');
+    const rows = db.prepare(`SELECT id, username, role FROM users WHERE id IN (${ids.map(() => '?').join(',')})`).all(...ids).map(plain);
+    const keep = sha(cookies(req).nc_sid || ''), kill = db.prepare('DELETE FROM sessions WHERE user_id = ? AND token_hash <> ?');
+    if (b.password != null) {
+      const pw = String(b.password), min = rows.some(r => r.role === 'admin') ? 6 : 4;
+      if (pw.length < min || pw.length > 128) throw httpErr(400, `รหัสผ่านต้องมี ${min}–128 ตัวอักษร`);
+      const force = b.must_change !== false || pw === DEFAULT_PW || pw.toLowerCase() === 'admin';
+      const hashes = await Promise.all(rows.map(() => hashPw(pw)));   // salt แยกทุกบัญชี
+      tx(() => { const up = db.prepare('UPDATE users SET pass_hash = ?, must_change = ? WHERE id = ?'); rows.forEach((r, i) => { up.run(hashes[i], force ? 1 : 0, r.id); kill.run(r.id, keep); }); });
+      audit(req, user, 'user_password_bulk', `${rows.length} บัญชี: ${rows.slice(0, 10).map(r => r.username).join(', ')}${rows.length > 10 ? ' …' : ''}`);
+      return send(res, 200, { ok: true, count: rows.length });
+    }
+    if (b.active != null) {
+      const on = !!b.active;
+      if (!on && rows.some(r => r.id === user.id)) throw httpErr(400, 'ปิดใช้บัญชีของตัวเองไม่ได้');
+      if (!on) { const left = db.prepare(`SELECT COUNT(*) AS n FROM users WHERE role = 'admin' AND active = 1 AND id NOT IN (${ids.map(() => '?').join(',')})`).get(...ids).n; if (!left) throw httpErr(400, 'ต้องเหลือแอดมินที่ใช้งานได้อย่างน้อย 1 บัญชี'); }
+      tx(() => { const up = db.prepare('UPDATE users SET active = ? WHERE id = ?'); rows.forEach(r => { up.run(on ? 1 : 0, r.id); if (!on) kill.run(r.id, keep); }); });
+      audit(req, user, on ? 'user_bulk_enabled' : 'user_bulk_disabled', `${rows.length} บัญชี`);
+      return send(res, 200, { ok: true, count: rows.length });
+    }
+    throw httpErr(400, 'ไม่มีรายการที่จะทำ');
+  }
+
   if (p === 'audit' && m === 'GET') {
     need(user, 'admin');
     const lim = Math.min(500, Math.max(1, +url.searchParams.get('limit') || 100));

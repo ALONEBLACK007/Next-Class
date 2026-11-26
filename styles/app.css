@@ -162,6 +162,27 @@ nav.tabs::-webkit-scrollbar { display: none; }
 button.t { min-height: 40px; padding: 8px 0; color: var(--mu); background: none; border: 0; border-bottom: 2px solid transparent; border-radius: 0; white-space: nowrap; }
 button.t:hover:not(:disabled) { color: var(--tx); background: none; }
 button.t.on { color: var(--tx); border-bottom-color: var(--pr); font-weight: 600; }
+/* แท็บพิเศษของแอดมิน: ชิดขวา มีไอคอนโล่ */
+button.t.adm { margin-left: auto; gap: 5px; color: var(--pr); }
+button.t.adm .i { width: 15px; height: 15px; }
+button.t.adm.on { color: var(--tx); }
+
+/* หน้าผู้ดูแลระบบ */
+.adm-hd { display: flex; flex-wrap: wrap; align-items: flex-end; justify-content: space-between; gap: 12px; margin-bottom: 16px; }
+.adm-t { display: flex; align-items: center; gap: 8px; margin: 0; font-size: 19px; font-weight: 600; }
+.adm-t .i { width: 20px; height: 20px; color: var(--pr); }
+.adm-hd p { margin: 2px 0 0; font-size: 13px; }
+.seg { display: inline-flex; flex-wrap: wrap; gap: 2px; padding: 3px; background: var(--sunk); border: 1px solid var(--bd); border-radius: 10px; }
+.seg button { min-height: 32px; padding: 4px 12px; color: var(--mu); background: none; border: 0; border-radius: 7px; font-size: 13px; }
+.seg button:hover:not(:disabled) { color: var(--tx); background: color-mix(in srgb, var(--card) 60%, transparent); }
+.seg button.on { color: var(--tx); background: var(--card); box-shadow: var(--sh); }
+.seg .i { width: 15px; height: 15px; }
+.adm-k { margin-bottom: 16px; }
+.selbar { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; margin: 0 0 10px; padding: 8px 12px; background: var(--pr2); border-radius: 8px; font-size: 13px; }
+th.cb, td.cb { width: 36px; text-align: center; }
+tr.sel > td { background: color-mix(in srgb, var(--pr) 7%, var(--card)); }
+td .role { font-size: 11px; }
+
 main#mn { max-width: 1200px; margin: 0 auto; padding: 20px 20px 110px; }
 
 /* ---------- Cards ---------- */
@@ -336,6 +357,9 @@ td.ce:hover .ad, td.ce:focus-visible .ad { opacity: 1; }
   .bar { grid-template-columns: 96px 1fr auto; }
   .lg li { grid-template-columns: 1fr; gap: 4px; }
   .si input { width: 100%; }
+  button.t.adm { margin-left: 0; }
+  .seg { width: 100%; }
+  .seg button { flex: 1 1 45%; }
   .si { flex: 1 1 100%; }
   #bot { right: 16px; bottom: calc(16px + env(safe-area-inset-bottom, 0px)); }
   #bb { width: 46px; height: 46px; padding: 0; font-size: 0; gap: 0; }
