@@ -114,6 +114,12 @@ CREATE TABLE IF NOT EXISTS audit_log (
 );
 `);
 
+// migration: บัญชีที่สมัครเองและรออนุมัติ
+if (!db.prepare('PRAGMA table_info(users)').all().some(c => c.name === 'pending')) db.exec('ALTER TABLE users ADD COLUMN pending INTEGER NOT NULL DEFAULT 0');
+const getSetting = (key, def) => { const r = db.prepare('SELECT value_json FROM settings WHERE key = ?').get(key); try { return r ? { ...def, ...JSON.parse(r.value_json) } : def; } catch { return def; } };
+const putSetting = (key, val) => db.prepare("INSERT INTO settings (key, value_json, updated_at) VALUES (?, ?, datetime('now')) ON CONFLICT(key) DO UPDATE SET value_json = excluded.value_json, updated_at = excluded.updated_at").run(key, JSON.stringify(val));
+const SIGNUP_DEF = { enabled: true, auto_approve: false };
+
 const tx = fn => { db.exec('BEGIN'); try { const r = fn(); db.exec('COMMIT'); return r; } catch (e) { db.exec('ROLLBACK'); throw e; } };
 const plain = o => (o ? { ...o } : o);
 
@@ -169,7 +175,7 @@ const cookieFor = (req, token, maxAge) => `nc_sid=${token}; HttpOnly; SameSite=S
 const pubUser = u => ({ id: u.id, username: u.username, display_name: u.display_name, role: u.role, teacher_name: u.teacher_name, group_name: u.group_name, student_id: u.student_id, must_change: !!u.must_change });
 
 // ---------- กันเดารหัส ----------
-const fails = new Map();
+const fails = new Map(), signups = new Map();
 function tooMany(ip) { const f = fails.get(ip); return f && f.n >= 10 && Date.now() - f.t < 10 * 60e3; }
 function addFail(ip) { const f = fails.get(ip); if (!f || Date.now() - f.t > 10 * 60e3) fails.set(ip, { n: 1, t: Date.now() }); else f.n++; }
 
@@ -269,10 +275,12 @@ async function api(req, res, url) {
   if (p === 'login' && m === 'POST') {
     if (tooMany(req.ip)) throw httpErr(429, 'พยายามเข้าสู่ระบบผิดหลายครั้ง กรุณารอ 10 นาที');
     const b = await readBody(req), role = str(b.role, 20), name = str(b.username, 120);
-    const cands = db.prepare(`SELECT * FROM users WHERE active = 1 AND role = ? AND (username = ? COLLATE NOCASE OR display_name = ? OR student_id = ?) ORDER BY (username = ? COLLATE NOCASE) DESC, id`).all(role, name, name, name, name);
+    const cands = db.prepare(`SELECT * FROM users WHERE role = ? AND (username = ? COLLATE NOCASE OR display_name = ? OR student_id = ?) ORDER BY active DESC, (username = ? COLLATE NOCASE) DESC, id`).all(role, name, name, name, name);
     let u = null;
     for (const c of cands) if (await checkPw(b.password, c.pass_hash)) { u = plain(c); break; }
     if (!u) { addFail(req.ip); audit(req, null, 'login_failed', `${role}:${name}`); throw httpErr(401, 'ชื่อผู้ใช้หรือรหัสผ่านไม่ถูกต้อง'); }
+    if (u.pending) throw httpErr(403, 'บัญชีของคุณกำลังรอแอดมินอนุมัติ ลองเข้าสู่ระบบอีกครั้งหลังได้รับอนุมัติ');
+    if (!u.active) throw httpErr(403, 'บัญชีนี้ถูกปิดใช้งาน กรุณาติดต่อแอดมิน');
     fails.delete(req.ip);
     const token = newSession(u.id, req.ip);
     db.prepare("UPDATE users SET last_login = datetime('now') WHERE id = ?").run(u.id);
@@ -285,6 +293,43 @@ async function api(req, res, url) {
     return send(res, 200, { ok: true }, { 'Set-Cookie': cookieFor(req, '', 0) });
   }
   if (p === 'me' && m === 'GET') return send(res, 200, { user: user ? pubUser(user) : null });
+
+  // ----- สมัครสมาชิก (ครู/นักเรียน) -----
+  if (p === 'signup/options' && m === 'GET') {
+    const cfg = getSetting('signup', SIGNUP_DEF), ds = activeDataset();
+    let teachers = [], groups = [];
+    if (ds) { try { const d = JSON.parse(ds.data_json); teachers = (d.teachers || []).map(t => t.name).filter(Boolean); groups = (d.groups || []).map(g => g.name).filter(Boolean); } catch {} }
+    return send(res, 200, { enabled: !!cfg.enabled, auto_approve: !!cfg.auto_approve, teachers, groups });
+  }
+  if (p === 'signup' && m === 'POST') {
+    const cfg = getSetting('signup', SIGNUP_DEF);
+    if (!cfg.enabled) throw httpErr(403, 'ขณะนี้ปิดรับสมัครสมาชิก กรุณาติดต่อแอดมิน');
+    const f = signups.get(req.ip); if (f && f.n >= 5 && Date.now() - f.t < 3600e3) throw httpErr(429, 'สมัครหลายครั้งเกินไป กรุณารอ 1 ชั่วโมง');
+    const b = await readBody(req), role = str(b.role, 20), username = str(b.username, 40), display = str(b.display_name, 120), pw = String(b.password || '');
+    if (!['teacher', 'student'].includes(role)) throw httpErr(400, 'เลือกบทบาทครูหรือนักเรียน');
+    if (!/^[\p{L}\p{M}\p{N}._-]{3,40}$/u.test(username)) throw httpErr(400, 'ชื่อผู้ใช้ต้องยาว 3–40 ตัว ใช้ตัวอักษร ตัวเลข . _ - ได้ (ห้ามเว้นวรรค)');
+    if (display.length < 2) throw httpErr(400, 'กรอกชื่อ-นามสกุล');
+    if (pw.length < 8 || pw.length > 128) throw httpErr(400, 'รหัสผ่านต้องมี 8 ตัวอักษรขึ้นไป');
+    if (!/[A-Za-z฀-๿]/.test(pw) || !/\d/.test(pw)) throw httpErr(400, 'รหัสผ่านต้องมีทั้งตัวอักษรและตัวเลข');
+    if (pw.toLowerCase() === username.toLowerCase()) throw httpErr(400, 'รหัสผ่านต้องไม่เหมือนชื่อผู้ใช้');
+    if (db.prepare('SELECT id FROM users WHERE username = ?').get(username)) throw httpErr(409, 'ชื่อผู้ใช้นี้ถูกใช้แล้ว ลองชื่ออื่น');
+    const ds = activeDataset(), d = ds ? JSON.parse(ds.data_json) : {};
+    let teacher_name = null, group_name = null, student_id = null;
+    if (role === 'teacher') {
+      teacher_name = str(b.teacher_name, 120);
+      if ((d.teachers || []).length && !(d.teachers || []).some(t => t.name === teacher_name)) throw httpErr(400, 'เลือกชื่อครูจากรายการ');
+    } else {
+      group_name = str(b.group_name, 120); student_id = str(b.student_id, 40) || null;
+      if ((d.groups || []).length && !(d.groups || []).some(g => g.name === group_name)) throw httpErr(400, 'เลือกกลุ่มเรียนจากรายการ');
+      if (student_id && db.prepare('SELECT id FROM users WHERE student_id = ? AND role = ?').get(student_id, 'student')) throw httpErr(409, 'รหัสนักเรียนนี้มีบัญชีแล้ว ใช้รหัสนักเรียนเข้าสู่ระบบ หรือติดต่อแอดมิน');
+    }
+    const auto = !!cfg.auto_approve;
+    const id = Number(db.prepare('INSERT INTO users (username, display_name, role, teacher_name, group_name, student_id, pass_hash, must_change, active, pending) VALUES (?,?,?,?,?,?,?,0,?,?)')
+      .run(username, display, role, teacher_name || null, group_name || null, student_id, await hashPw(pw), auto ? 1 : 0, auto ? 0 : 1).lastInsertRowid);
+    if (!f || Date.now() - f.t > 3600e3) signups.set(req.ip, { n: 1, t: Date.now() }); else f.n++;
+    audit(req, { id, username }, 'signup', `${role === 'teacher' ? 'ครู' : 'นักเรียน'} ${display}${teacher_name ? ' → ' + teacher_name : ''}${group_name ? ' → ' + group_name : ''}${auto ? '' : ' (รออนุมัติ)'}`);
+    return send(res, 200, { status: auto ? 'active' : 'pending' });
+  }
 
   if (p === 'password' && m === 'POST') {
     need(user);
@@ -399,7 +444,7 @@ async function api(req, res, url) {
   // ----- จัดการบัญชี (แอดมิน) -----
   if (p === 'users' && m === 'GET') {
     need(user, 'admin');
-    const users = db.prepare('SELECT id, username, display_name, role, teacher_name, group_name, student_id, must_change, active, created_at, last_login FROM users ORDER BY CASE role WHEN \'admin\' THEN 0 WHEN \'teacher\' THEN 1 ELSE 2 END, username').all().map(plain);
+    const users = db.prepare('SELECT id, username, display_name, role, teacher_name, group_name, student_id, must_change, active, pending, created_at, last_login FROM users ORDER BY pending DESC, CASE role WHEN \'admin\' THEN 0 WHEN \'teacher\' THEN 1 ELSE 2 END, username').all().map(plain);
     return send(res, 200, { users });
   }
   if (p === 'users' && m === 'POST') {
@@ -426,10 +471,16 @@ async function api(req, res, url) {
       return send(res, 200, { ok: true });
     }
     const b = await readBody(req), sets = [], vals = [];
+    if (b.approve === true) {
+      if (!target.pending) throw httpErr(400, 'บัญชีนี้ไม่ได้รออนุมัติ');
+      db.prepare('UPDATE users SET pending = 0, active = 1 WHERE id = ?').run(id);
+      audit(req, user, 'user_approved', `${target.username} (${target.role})`);
+      return send(res, 200, { ok: true });
+    }
     if (b.display_name != null) { sets.push('display_name = ?'); vals.push(str(b.display_name, 120) || target.username); }
     if (b.active != null) {
       if (!b.active && (id === user.id || (target.role === 'admin' && admins() <= 1))) throw httpErr(400, 'ปิดบัญชีนี้ไม่ได้');
-      sets.push('active = ?'); vals.push(b.active ? 1 : 0);
+      sets.push('active = ?'); vals.push(b.active ? 1 : 0); if (b.active) sets.push('pending = 0');
     }
     if (b.password != null) {
       const pw = String(b.password || DEFAULT_PW), min = target.role === 'admin' ? 6 : 4;
@@ -454,10 +505,18 @@ async function api(req, res, url) {
     const by = Object.fromEntries(['admin', 'teacher', 'student'].map(r => [r, db.prepare('SELECT COUNT(*) AS n FROM users WHERE role = ?').get(r).n]));
     let size = 0; for (const f of [DB_FILE, DB_FILE + '-wal']) { try { size += fs.statSync(f).size; } catch {} }
     return send(res, 200, {
-      users: by, must_change: one('SELECT COUNT(*) AS n FROM users WHERE must_change = 1 AND active = 1'), inactive: one('SELECT COUNT(*) AS n FROM users WHERE active = 0'),
+      users: by, must_change: one('SELECT COUNT(*) AS n FROM users WHERE must_change = 1 AND active = 1'), inactive: one('SELECT COUNT(*) AS n FROM users WHERE active = 0 AND pending = 0'),
+      pending: one('SELECT COUNT(*) AS n FROM users WHERE pending = 1'), signup: getSetting('signup', SIGNUP_DEF),
       failed24: one("SELECT COUNT(*) AS n FROM audit_log WHERE action = 'login_failed' AND at > datetime('now','-1 day')"),
       datasets: one('SELECT COUNT(*) AS n FROM datasets'), timetables: one('SELECT COUNT(*) AS n FROM timetables'), audit: one('SELECT COUNT(*) AS n FROM audit_log'), db_size: size,
     });
+  }
+  if (p === 'admin/signup' && m === 'PUT') {
+    need(user, 'admin');
+    const b = await readBody(req), cfg = { enabled: !!b.enabled, auto_approve: !!b.auto_approve };
+    putSetting('signup', cfg);
+    audit(req, user, 'signup_settings', `เปิดรับสมัคร: ${cfg.enabled ? 'เปิด' : 'ปิด'} · อนุมัติอัตโนมัติ: ${cfg.auto_approve ? 'ใช่' : 'ไม่'}`);
+    return send(res, 200, cfg);
   }
   if (p === 'users/bulk' && m === 'POST') {
     need(user, 'admin');
@@ -474,6 +533,12 @@ async function api(req, res, url) {
       tx(() => { const up = db.prepare('UPDATE users SET pass_hash = ?, must_change = ? WHERE id = ?'); rows.forEach((r, i) => { up.run(hashes[i], force ? 1 : 0, r.id); kill.run(r.id, keep); }); });
       audit(req, user, 'user_password_bulk', `${rows.length} บัญชี: ${rows.slice(0, 10).map(r => r.username).join(', ')}${rows.length > 10 ? ' …' : ''}`);
       return send(res, 200, { ok: true, count: rows.length });
+    }
+    if (b.approve === true) {
+      const pend = rows.filter(r => db.prepare('SELECT pending FROM users WHERE id = ?').get(r.id).pending);
+      tx(() => { const up = db.prepare('UPDATE users SET pending = 0, active = 1 WHERE id = ?'); pend.forEach(r => up.run(r.id)); });
+      audit(req, user, 'user_approved', `${pend.length} บัญชี: ${pend.slice(0, 10).map(r => r.username).join(', ')}`);
+      return send(res, 200, { ok: true, count: pend.length });
     }
     if (b.active != null) {
       const on = !!b.active;

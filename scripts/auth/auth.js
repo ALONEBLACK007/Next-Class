@@ -16,11 +16,11 @@ async function enterServer(u){API.user=u;await API.load();
  if(u.must_change)openPw(true)}
 $('#lb').onclick=async()=>{const r=$('#lr').value,un=$('#lu').value.trim(),pw=$('#lp').value;
  if(API.on){const b=$('#lb');b.disabled=true;try{const j=await API.call('POST','login',{role:r,username:un,password:pw});$('#lp').value='';await enterServer(j.user)}
-  catch(e){$('#le').textContent=e.status==429?e.message:e.status==401?'ชื่อผู้ใช้หรือรหัสผ่านไม่ถูกต้อง ตรวจบทบาทที่เลือกและลองอีกครั้ง':'เชื่อมต่อเซิร์ฟเวอร์ไม่ได้: '+e.message}finally{b.disabled=false}return}
+  catch(e){$('#lok').classList.add('hide');$('#le').textContent=e.status==401?'ชื่อผู้ใช้หรือรหัสผ่านไม่ถูกต้อง ตรวจบทบาทที่เลือกและลองอีกครั้ง':e.status?e.message:'เชื่อมต่อเซิร์ฟเวอร์ไม่ได้ ลองใหม่อีกครั้ง'}finally{b.disabled=false}return}
  const U=authz(r,un,pw);if(U)showApp(U);else $('#le').textContent='ชื่อผู้ใช้หรือรหัสผ่านไม่ถูกต้อง ตรวจบทบาทที่เลือกและลองอีกครั้ง'};
 $('#lp').onkeydown=e=>{if(e.key=='Enter')$('#lb').click()};
 $('#lo').onclick=async()=>{if(API.on){try{if(API.dirty)await API.chain;await API.call('POST','logout')}catch(e){}API.user=null;API.last=null;S.data=null;S.tt=null;S.raw={};S.blocks=[];S.stage=null}
- S.user=null;$('#app').classList.add('hide');$('#bot').classList.add('hide');$('#login').classList.remove('hide');$('#lp').value=''};
+ S.user=null;$('#app').classList.add('hide');$('#bot').classList.add('hide');$('#login').classList.remove('hide');$('#lp').value='';$('#lok').classList.add('hide');if(API.on)loadSignup()};
 let pwForced=false;
 function openPw(force){pwForced=!!force;['p0','p1','p2'].forEach(i=>$('#'+i).value='');$('#pm').textContent=force?'เพื่อความปลอดภัย กรุณาตั้งรหัสผ่านใหม่ก่อนใช้งาน':'';$('#pc').classList.toggle('hide',pwForced);$('#pd').classList.remove('hide');setTimeout(()=>$('#p0').focus(),30)}
 $('#pw').onclick=()=>openPw(false);
@@ -28,9 +28,34 @@ $('#pc').onclick=()=>{if(!pwForced)$('#pd').classList.add('hide')};
 $('#ps').onclick=async()=>{const m=$('#pm'),o=$('#p0').value,n=$('#p1').value;if(n.length<6){m.textContent='รหัสใหม่ต้องมีอย่างน้อย 6 ตัวอักษร';return}if(n!=$('#p2').value){m.textContent='ยืนยันรหัสไม่ตรงกัน';return}
  if(API.on){try{await API.call('POST','password',{old:o,new:n});if(API.user)API.user.must_change=false;pwForced=false;$('#pd').classList.add('hide');toast('เปลี่ยนรหัสผ่านแล้ว')}catch(e){m.textContent=e.message}return}
  if(!admOk(o)){m.textContent='รหัสปัจจุบันไม่ถูกต้อง';return}try{localStorage.setItem('ttadm',H(n));$('#pd').classList.add('hide')}catch(e){m.textContent='บันทึกไม่ได้ในเบราว์เซอร์นี้'}};
+// ----- สมัครสมาชิก (โหมดเซิร์ฟเวอร์) -----
+const authTab=t=>{document.querySelectorAll('#atabs [data-at]').forEach(b=>{const on=b.dataset.at==t;b.classList.toggle('on',on);b.setAttribute('aria-selected',on)});$('#fin').classList.toggle('hide',t!='in');$('#fup').classList.toggle('hide',t!='up');$('#le').textContent='';$('#sue').textContent='';if(t=='up')$('#lok').classList.add('hide')};
+document.querySelectorAll('#atabs [data-at]').forEach(b=>b.onclick=()=>authTab(b.dataset.at));
+const suRole=()=>{const t=$('#su_role').value=='teacher';$('#su_tc').classList.toggle('hide',!t);$('#su_st').classList.toggle('hide',t)};
+$('#su_role').onchange=suRole;
+$('#su_sid').oninput=e=>{const u=$('#su_user');if(!u.dataset.touched)u.value=e.target.value.trim()};
+$('#su_user').oninput=e=>{e.target.dataset.touched=1};
+$('#su_show').onclick=()=>{const h=$('#su_pw').type=='password';['su_pw','su_pw2'].forEach(i=>$('#'+i).type=h?'text':'password');$('#su_show').textContent=h?'ซ่อน':'แสดง'};
+async function loadSignup(){try{const o=await API.call('GET','signup/options');$('#atabs').classList.toggle('hide',!o.enabled);if(!o.enabled){authTab('in');return}
+ const opt=(a,ph)=>`<option value="">${ph}</option>`+a.map(x=>`<option>${esc(x)}</option>`).join('');
+ $('#su_group').innerHTML=o.groups.length?opt(o.groups,'— เลือกกลุ่มเรียน —'):'<option value="">ยังไม่มีรายชื่อกลุ่ม (แอดมินยังไม่นำเข้าข้อมูล)</option>';
+ $('#su_teacher').innerHTML=o.teachers.length?opt(o.teachers,'— เลือกชื่อของคุณ —'):'<option value="">ยังไม่มีรายชื่อครู (แอดมินยังไม่นำเข้าข้อมูล)</option>';
+ $('#su_note').textContent=o.auto_approve?'สมัครแล้วเข้าสู่ระบบได้ทันที':'หลังสมัคร แอดมินต้องอนุมัติก่อน จึงจะเข้าสู่ระบบได้';suRole()}catch(e){}}
+$('#fup').onsubmit=async e=>{e.preventDefault();const er=$('#sue'),fd=Object.fromEntries(new FormData($('#fup')));er.textContent='';
+ if(!String(fd.display_name||'').trim())return void(er.textContent='กรอกชื่อ-นามสกุล');
+ if(fd.role=='student'&&!fd.group_name)return void(er.textContent='เลือกกลุ่มเรียน');
+ if(fd.role=='teacher'&&!fd.teacher_name)return void(er.textContent='เลือกชื่อครูของคุณจากรายการ');
+ if(String(fd.username||'').trim().length<3)return void(er.textContent='ชื่อผู้ใช้ต้องยาวอย่างน้อย 3 ตัว');
+ if(fd.password.length<8||!/\d/.test(fd.password)||!/[A-Za-z฀-๿]/.test(fd.password))return void(er.textContent='รหัสผ่านต้องมี 8 ตัวขึ้นไป และมีทั้งตัวอักษรและตัวเลข');
+ if(fd.password!==$('#su_pw2').value)return void(er.textContent='ยืนยันรหัสผ่านไม่ตรงกัน');
+ if(fd.role=='teacher'){delete fd.student_id;delete fd.group_name}else delete fd.teacher_name;
+ const b=$('#sub');b.disabled=true;try{const r=await API.call('POST','signup',fd);
+  $('#fup').reset();delete $('#su_user').dataset.touched;suRole();authTab('in');$('#lr').value=fd.role;$('#lu').value=fd.username;$('#lp').value='';
+  const ok=$('#lok');ok.textContent=r.status=='active'?'สมัครสำเร็จ เข้าสู่ระบบด้วยรหัสผ่านที่ตั้งไว้ได้เลย':'สมัครสำเร็จ รอแอดมินอนุมัติ แล้วจึงเข้าสู่ระบบด้วยชื่อผู้ใช้นี้';ok.classList.remove('hide');$('#lp').focus()}
+ catch(err){er.textContent=err.message}finally{b.disabled=false}};
 // เปิดผ่านเซิร์ฟเวอร์ → ใช้ฐานข้อมูล และกลับเข้าระบบอัตโนมัติถ้ายังมี session
 (async()=>{if(!(await API.init()))return;S.data=null;S.tt=null;S.raw={};S.blocks=[];
- $('.demo').innerHTML='<b>โหมดเซิร์ฟเวอร์</b> ข้อมูลเก็บในฐานข้อมูล · แอดมินเริ่มต้น admin / admin (ต้องเปลี่ยนรหัสเมื่อเข้าครั้งแรก)<br>ครูใช้ teacher_id หรือชื่อครู · นักเรียนใช้รหัสนักเรียนหรือ group_id · รหัสเริ่มต้น 1234';$('#rs').classList.add('hide');
+ $('.demo').innerHTML='<b>โหมดเซิร์ฟเวอร์</b> ข้อมูลเก็บในฐานข้อมูล · แอดมินเริ่มต้น admin / admin (ต้องเปลี่ยนรหัสเมื่อเข้าครั้งแรก)<br>ครูใช้ teacher_id หรือชื่อครู · นักเรียนใช้รหัสนักเรียนหรือ group_id · รหัสเริ่มต้น 1234';$('#rs').classList.add('hide');loadSignup();
  try{const j=await API.call('GET','me');if(j&&j.user)await enterServer(j.user)}catch(e){}})();
 const isDark=()=>{const r=document.documentElement;return r.dataset.theme=='dark'||(!r.dataset.theme&&matchMedia('(prefers-color-scheme: dark)').matches)};
 const thIcon=()=>{$('#th').innerHTML=ic(isDark()?'sun':'moon')};thIcon();

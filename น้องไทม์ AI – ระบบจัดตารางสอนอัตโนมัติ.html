@@ -13,13 +13,28 @@
 <main id="login" class="login"><div class="login-card">
 <div class="login-hero"><img src="imges/f8baa89f-9195-4ee2-bd3e-c9ffa9ecc72f.png" alt="" width="1774" height="887"></div>
 <h1 class="vh">Next Class</h1><p class="mu">ระบบจัดตารางสอนอัตโนมัติ สำหรับครู นักเรียน และฝ่ายวิชาการ</p>
+<div class="seg auth-tabs hide" id="atabs" role="tablist" aria-label="เข้าสู่ระบบหรือสมัครสมาชิก"><button type="button" role="tab" class="on" aria-selected="true" data-at="in">เข้าสู่ระบบ</button><button type="button" role="tab" aria-selected="false" data-at="up">สมัครสมาชิก</button></div>
+<div id="fin">
 <label class="fl" for="lr">เข้าสู่ระบบในฐานะ<select id="lr"><option value="admin">แอดมิน</option><option value="teacher">ครู</option><option value="student">นักเรียน</option></select></label>
 <label class="fl" for="lu">ชื่อผู้ใช้<input id="lu" autocapitalize="off" autocomplete="username" value="admin"></label>
 <label class="fl" for="lp">รหัสผ่าน<input id="lp" type="password" autocomplete="current-password"></label>
+<p id="lok" class="ok-box hide" role="status"></p>
 <p id="le" class="er" role="alert"></p>
 <button id="lb" class="block">เข้าสู่ระบบ</button>
 <div class="demo"><b>บัญชีทดลอง</b> admin / admin · teacher / teacher · student / student<br>หลังนำเข้าข้อมูล ครูใช้ชื่อครูหรือ teacher_id ส่วนนักเรียนใช้รหัสนักเรียน ชื่อกลุ่ม หรือ group_id รหัสผ่าน 1234</div>
-<button class="link" id="rs">ลืมรหัสแอดมิน? รีเซ็ตเป็น admin / admin</button></div></main>
+<button class="link" id="rs">ลืมรหัสแอดมิน? รีเซ็ตเป็น admin / admin</button></div>
+<form id="fup" class="hide" novalidate>
+<label class="fl">สมัครในฐานะ<select id="su_role" name="role"><option value="student">นักเรียน</option><option value="teacher">ครู</option></select></label>
+<label class="fl">ชื่อ-นามสกุล<input name="display_name" required maxlength="120" autocomplete="name"></label>
+<div id="su_st"><div class="g2"><label class="fl">รหัสนักเรียน<input id="su_sid" name="student_id" maxlength="40" inputmode="numeric" autocomplete="off"></label><label class="fl">กลุ่มเรียน<select id="su_group" name="group_name"></select></label></div></div>
+<div id="su_tc" class="hide"><label class="fl">ชื่อครูในระบบ<select id="su_teacher" name="teacher_name"></select></label></div>
+<label class="fl">ชื่อผู้ใช้ (ใช้เข้าสู่ระบบ)<input id="su_user" name="username" required minlength="3" maxlength="40" autocapitalize="off" autocomplete="username"></label>
+<label class="fl">รหัสผ่าน (8 ตัวขึ้นไป มีตัวอักษรและตัวเลข)<span class="pwf"><input id="su_pw" name="password" type="password" required minlength="8" maxlength="128" autocomplete="new-password"><button type="button" class="g sm" id="su_show">แสดง</button></span></label>
+<label class="fl">ยืนยันรหัสผ่าน<input id="su_pw2" type="password" required minlength="8" maxlength="128" autocomplete="new-password"></label>
+<p id="sue" class="er" role="alert"></p>
+<button type="submit" class="block" id="sub">สมัครสมาชิก</button>
+<p class="mu demo" id="su_note">หลังสมัคร แอดมินต้องอนุมัติก่อนจึงจะเข้าสู่ระบบได้</p>
+</form></div></main>
 
 <div id="app" class="hide">
 <header class="top"><div class="top-in"><img class="mark" src="imges/favicon-64.png" alt="" width="28" height="28"><h1>Next Class</h1><span class="role" id="who"></span><span class="sp"></span><span class="sync hide" id="sync" role="status" aria-live="polite"></span>
