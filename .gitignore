@@ -5,10 +5,8 @@ backEnd/data/
 *.db-shm
 *.sqlite
 
-# เครื่องมือ AI / ค่าตั้งเฉพาะเครื่อง
-.claude/
-.agents/
-.codex/
+# ค่าตั้งและแคชเฉพาะเครื่อง (สกิล/agents ใน .claude .agents .codex แชร์ให้ทีมได้)
+.claude/settings.local.json
 .impeccable/
 
 # ทั่วไป
